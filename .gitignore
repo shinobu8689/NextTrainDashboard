@@ -1,0 +1,10 @@
+# Ignore config files
+api_key.txt
+gtfs.db
+gtfs.zip
+
+# Ignore folders
+backup/
+gtfs_metro_trains/
+__pycache__/
+.idea/

@@ -1,0 +1,217 @@
+import requests
+import sqlite3
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+from google.transit import gtfs_realtime_pb2
+import os
+import sys
+
+'''
+This application use the API "GTFS Realtime - Trip Updates - Metro Train" provided by Transport Victoria,
+to get the trip status, delay, and stops of all current running trains.
+More: https://opendata.transport.vic.gov.au/dataset/gtfs-realtime/resource/0010d606-47bf-4abb-a04f-63add63a4d23?inner_span=True
+
+Application is combined with the GTFS Schedule dataset, implemented in gtfs_query.py.
+More: https://opendata.transport.vic.gov.au/dataset/gtfs-schedule
+
+!!! Get your own API Keys from Transport Victoria, and put it in "api_key.txt" within the same folder of this file.
+
+Project Folder
+├── gtfs_metro_trains (Unzip from GTFS dataset (2) in Transport Victoria)
+│   └── ...
+├── gtfs.db
+├── gtfs_query.py
+├── current_trips.py
+└── api_key.txt
+
+'''
+
+GTFS_DB = "gtfs.db"
+URL = "https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/metro/trip-updates"
+
+KEY_FILE = "api_key.txt"
+
+def load_api_key():
+    '''
+    If "api_key.txt" doesn't exist, create it and exit
+    Otherwise, return key
+    '''
+
+    if not os.path.exists(KEY_FILE):
+        with open(KEY_FILE, "w") as f:
+            f.write("PUT_YOUR_API_KEY_HERE\n")
+        print(f"[!] {KEY_FILE} was created.")
+        print(f"[!] Paste your API key into the file and rerun.")
+        print(f"[!] API Key could be acquire from Transport Victoria's homepage.")
+        sys.exit(1)
+
+    with open(KEY_FILE, "r") as f:
+        key = f.read().strip()
+
+    if not key or key == "PUT_YOUR_API_KEY_HERE":
+        print("[!] API key missing or placeholder.")
+        print("[!] Edit api_key.txt and rerun.")
+        sys.exit(1)
+
+    return key
+
+API_KEY = load_api_key()
+
+HEADERS = { "KeyId": API_KEY }
+MELBOURNE = ZoneInfo("Australia/Melbourne") # GTFS uses GMT+0, default to use Melbourne Timezone
+
+SCHEDULE_ENUM = {   # Enum used in GTFS
+    0: "SCHEDULED",
+    1: "ADDED",
+    2: "UNSCHEDULED",
+    3: "CANCELED",
+    4: "DUPLICATED",
+    5: "DELETED"
+}
+
+# =====================
+# UTILITY FUNCTIONS
+# =====================
+def load_stop_lookup():
+    '''
+    Uses the dataset to lookup corresponding stop_id to readable Station Name.
+    '''
+    conn = sqlite3.connect(GTFS_DB)
+    cur = conn.cursor()
+    cur.execute("SELECT stop_id, stop_name, platform_code FROM stops")
+    lookup = {
+        stop_id: {"name": stop_name, "platform": platform_code}
+        for stop_id, stop_name, platform_code in cur.fetchall()
+    }
+    conn.close()
+    return lookup
+
+def load_scheduled_times(trip_id):
+    '''
+
+    Return scheduled time based on the GTFS datasets with operational hours,
+    where same operation day over midnight is displayed beyond 24:00 even it is a new day
+    (e.g. 01:02 of 23/01 will be 25:02 22/01)
+
+    :return: scheduled time
+    '''
+    conn = sqlite3.connect(GTFS_DB)
+    cur = conn.cursor()
+    cur.execute("SELECT stop_id, arrival_time FROM stop_times WHERE trip_id = ?", (trip_id,))
+    schedule = {}
+    service_day = datetime.now(MELBOURNE).replace(hour=0, minute=0, second=0, microsecond=0)
+    for stop_id, arrival_time in cur.fetchall():
+        if not arrival_time:
+            continue
+        h, m, s = map(int, arrival_time.split(":"))
+        total_seconds = h * 3600 + m * 60 + s
+        schedule[stop_id] = service_day + timedelta(seconds=total_seconds)
+    conn.close()
+    return schedule
+
+STOP_LOOKUP = load_stop_lookup()
+
+def calculate_delay(rt_time, sched_time):
+    if not rt_time or not sched_time: return None
+    delay_min = int((rt_time - sched_time).total_seconds() / 60)
+    return delay_min
+
+# =====================
+# MAIN FUNCTION
+# =====================
+def return_trip_realtime(trip_ids, station_name, feed):
+    """
+    Returns simplified realtime info for multiple trips at a given station.
+    Returns a dict: {trip_id: list of dicts per stop with keys: relationship, scheduled, realtime, delay}
+    """
+    result = {}
+    for trip_id in trip_ids:
+        schedule_map = load_scheduled_times(trip_id)
+        trip_found = False
+        trip_stops = []
+
+        for entity in feed.entity:
+            if not entity.HasField("trip_update"):
+                continue
+            tu = entity.trip_update
+            if tu.trip.trip_id != trip_id:
+                continue
+
+            trip_found = True
+            for stu in tu.stop_time_update:
+                stop_info = STOP_LOOKUP.get(stu.stop_id, {})
+                stop_name_real = stop_info.get("name", stu.stop_id)
+                if station_name.lower() not in stop_name_real.lower():
+                    continue
+
+                # Realtime time
+                rt_time = None
+                if stu.HasField("arrival") and stu.arrival.time:
+                    rt_time = datetime.fromtimestamp(stu.arrival.time, tz=timezone.utc).astimezone(MELBOURNE)
+                elif stu.HasField("departure") and stu.departure.time:
+                    rt_time = datetime.fromtimestamp(stu.departure.time, tz=timezone.utc).astimezone(MELBOURNE)
+
+                sched_time = schedule_map.get(stu.stop_id)
+                sched_str = sched_time.strftime("%H:%M") if sched_time else "N/A"
+                rt_str = rt_time.strftime("%H:%M") if rt_time else "N/A"
+
+                relationship = SCHEDULE_ENUM.get(stu.schedule_relationship, "UNKNOWN") \
+                    if stu.HasField("schedule_relationship") else "UNKNOWN"
+                delay_int = calculate_delay(rt_time, sched_time)
+
+                trip_stops.append({
+                    "relationship": relationship,
+                    "scheduled": sched_str,
+                    "realtime": rt_str,
+                    "delay": delay_int
+                })
+
+            break  # stop after first matching trip update
+
+        if trip_found:
+            result[trip_id] = trip_stops
+        else:
+            result[trip_id] = []
+
+    return result
+
+
+def enquiry(station_name: str, trip_id_lst):
+    '''
+    Takes User input and Real Time info into the format for gtfs_query.py
+    '''
+    station_name_input = station_name.strip()
+    trip_ids_input = [tid.strip() for tid in trip_id_lst if tid.strip()]
+
+    response = requests.get(URL, headers=HEADERS)
+    if response.status_code != 200:
+        print("Error fetching realtime data:", response.status_code)
+        return None
+
+    feed = gtfs_realtime_pb2.FeedMessage()
+    feed.ParseFromString(response.content)
+
+    # Get realtime info
+    trips_data = return_trip_realtime(trip_ids_input, station_name_input, feed)
+
+    return trips_data
+
+
+# Below code for debugging - Single Trip Enquiry
+if __name__ == "__main__":
+    station_name = input("Enter station name (partial ok): ").strip()
+    trip_id_lst = input("Enter trip IDs (comma-separated): ").strip().split(",")
+
+    trips_data = enquiry(station_name, trip_id_lst)
+
+    # Build printable output
+    for trip_id, stops in trips_data.items():
+        if not stops:
+            print(f"Trip {trip_id} not found or no matching stops.")
+            continue
+
+        print(f"Trip ID: {trip_id}")
+        for s in stops:
+            print(f"{s['relationship']:^11} | {s['scheduled']} <> {s['realtime']} | {s['delay']:^9}")
+        print("-" * 50)
+
