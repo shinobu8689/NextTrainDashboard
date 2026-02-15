@@ -3,12 +3,10 @@ import csv
 from datetime import datetime, timedelta
 import os
 import time
-from fastapi import FastAPI
+
+
+
 import current_trips
-
-
-app = FastAPI()
-
 
 DB_FILE = "gtfs.db"
 GTFS_PATH = "gtfs_metro_trains/"
@@ -20,10 +18,6 @@ To add support for multi-station enquiry in terminal.
 Determine the viability auto updating dataset from Transport Victoria.
 Simplify setup process.
 Implement option.txt for default stations and other settings.
-Overnight services showing as 25:00+ should have a united display format. (sometimes 25:00 / 01:00)
-
-Need fix for Bus Replacement breaks the station search (Name displays as ___ Station Replacement Bus Stop).
-Town Hall Station direction showing duplicate entries due to trip changing, should be fixed by identifying the direction_id.
 '''
 
 
@@ -64,7 +58,7 @@ def load_table(conn, table, filename):
         for row in reader: conn.execute(f"INSERT INTO {table} VALUES ({','.join('?' * len(row))})", row)
     conn.commit()
 
-def get_next_stops(conn, trip_id, current_seq, now):
+def get_next_stops(conn, trip_id, current_seq):
     '''
     using the trip id, look for the remaining stops based on schedule data
     '''
@@ -119,7 +113,7 @@ def time_str_to_min(time_str):
         raise ValueError(f"Invalid time string: {time_str}")
     return h * 60 + m
 
-def minutes_until(departure_time_str, now):
+def minutes_until(departure_time_str):
     '''
     compute the time differences between scheduled time and actual time
     '''
@@ -136,7 +130,7 @@ def format_time_display(time_str):
     h, m, s = map(int, time_str.split(":"))
     return f"{h:02d}:{m:02d}"
 
-def render_next_stops(next_stops): # not used in web version, but kept for terminal display, might implement later
+def render_next_stops(next_stops):
     '''
     show the route and all stopping stations following the timetable.
     '''
@@ -175,27 +169,16 @@ def render_next_stops(next_stops): # not used in web version, but kept for termi
 
     print()
 
-def town_hall_block_merge(trains):
-    """
-    Merge GTFS split trips that are actually the same physical train
-    continuing under the same block_id.
-
-    P1 -> Sunbury, uses direction 1
-    P2 -> Dandy, uses direction 0
-
-    """
-
-    
-
-    return trains
 
 
-def get_station_data(station_name, conn):
+def main(input_string, conn):
 
-    now = datetime.now().strftime("%H:%M:%S")
-    five_mins_ago = (datetime.now() - timedelta(minutes=3)).strftime("%H:%M:%S")
-    weekday = datetime.now().strftime("%A").lower()
-    today = datetime.now().strftime("%Y%m%d")
+    # debug prompt input option checker
+    show_stopping_detail = "*" in input_string
+    station_name = input_string.replace("*", "")
+    show_debug = input_string[-2:] == " d"
+    if show_debug: station_name = input_string[:-2]
+
 
 
     query = f"""
@@ -242,6 +225,7 @@ def get_station_data(station_name, conn):
         trip_headsign,
         departure_time,
         trip_id,
+        stop_sequence,
         block_id,
         direction_id,
         stop_name
@@ -254,14 +238,16 @@ def get_station_data(station_name, conn):
     rows = cursor.fetchall()
     station_name = rows[0][-1] if rows else "No results found"
 
+
+    print(f"\n🚇 {station_name:<57}🔄 {now}\n{'=' * 72}")
+
     trip_lst = [each[4] for each in rows]                       # Get the list of trips to enquiry RT status
     response = current_trips.enquiry(station_name, trip_lst)
     if not response: print("No real-time data available.")
 
-    trains = []
 
     for each in rows:
-        route_color, platform, headsign, dep_time, trip_id, block_id, direction_id, stop_name = each
+        route_color, platform, headsign, dep_time, trip_id, stop_seq, block_id, direction_id, stop_name = each
 
         # Showing dest for trip passing city's station if inbound trains heading to Flinders Street first
         next_trip = find_next_trip_in_block(conn, block_id, trip_id)
@@ -269,11 +255,11 @@ def get_station_data(station_name, conn):
             headsign = f"{next_trip[0]}"
 
         # Default scheduled time calculations
-        mins = minutes_until(dep_time, now)
+        mins = minutes_until(dep_time)
         dep_time_display = format_time_display(dep_time)
 
         # Check with realtime response
-        delay_int = 0
+        delay_int = 0   # Assuming no delay
         trip_relationship = ""
         if response and trip_id in response and response[trip_id]:
             stop_data = response[trip_id][0]  # Only one stop matching station_name
@@ -282,31 +268,64 @@ def get_station_data(station_name, conn):
             delay_int = stop_data["delay"]
 
             # Calculate mins until new departure
-            mins = minutes_until(new_dep_time, now)
+            mins = minutes_until(new_dep_time)
             if dep_time_display == new_dep_time:    dep_time_display = f"{new_dep_time}"
             else:                                   dep_time_display = f"{dep_time_display} → {new_dep_time}"
 
 
-        train_data = {
-            "route_color": route_color,
-            "platform": platform,
-            "destination": headsign,
-            "scheduled_time": dep_time_display,
-            "minutes_until": mins,
-            "delay_minutes": delay_int,
-            "status": trip_relationship or "SCHEDULED",
-            "trip_id": trip_id,
-            "block_id": block_id
-        }
+        # below to be added in JS
 
-        trains.append(train_data)
+        delay_str = ""  # Trips and Delay Status
+        if trip_relationship == "CANCELED": mins_display = f"{'CANCELED':>9}"
+        elif mins < 0:                      mins_display = f"{'DEPARTED':>9}"
+        elif mins == 0:                     mins_display = f"{'DEPARTING':>9}"
+        elif mins == 1:                     mins_display = f"{'ARRIVING':>9}"
+        else:
+            mins_display = f"{mins:>5} min"
+            if delay_int > 0:   delay_str = f"{colour_text("FF0000", f"+{delay_int}m")}"
+            elif delay_int < 0: delay_str = f"{colour_text("FFFF00", f"{delay_int}m")}"
 
-    trains = town_hall_block_merge(trains)
-    trains.sort(key=lambda t: (int(t['platform']), t['minutes_until'])) #containing Replacement Bus Stops with non-integer platform codes, breaks
 
-    return {
-        "station": stop_name,
-        "current_time": now,
-        "trains": trains
-    }
 
+        print(  f"{colour_text(route_color, "█")} {platform:<3}  "
+                f"{headsign:<35}"
+                f"{dep_time_display:>15} {mins_display} {delay_str} {trip_id if show_debug else ""} {block_id if show_debug else ""} {direction_id if show_debug else ""}"
+        )
+
+
+        if show_stopping_detail:
+            next_stops = get_next_stops(conn, trip_id, stop_seq)
+            if next_stops:  render_next_stops(next_stops)
+            else:           print("└ Terminates")
+
+
+def load_timetable():
+    print("Loading Timetable...")
+    conn = sqlite3.connect(DB_FILE)
+    load_table(conn, "stops", "stops.txt")
+    load_table(conn, "stop_times", "stop_times.txt")
+    load_table(conn, "trips", "trips.txt")
+    load_table(conn, "routes", "routes.txt")
+    load_table(conn, "calendar", "calendar.txt")
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+    return conn
+
+if __name__ == "__main__":
+
+    conn = load_timetable()
+    t = input("Station Name: ")
+    while t != "":
+        os.system('cls' if os.name == 'nt' else 'clear')
+
+        # update current time for enquiry for each loop
+        now = datetime.now().strftime("%H:%M:%S")
+        five_mins_ago = (datetime.now() - timedelta(minutes=3)).strftime("%H:%M:%S")
+        date = datetime.now().strftime("%d/%m/%Y")
+        weekday = datetime.now().strftime("%A").lower()
+        today = datetime.now().strftime("%Y%m%d")
+
+        main(t, conn)  # pass connection instead of creating inside main
+        time.sleep(30)
+
+    conn.close()

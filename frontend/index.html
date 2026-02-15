@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>NextTrain Dashboard</title>
+<style>
+body { font-family: sans-serif; background: #111; color: #eee; }
+table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+th, td { padding: 8px; text-align: left; border-bottom: 1px solid #333; }
+th { background-color: #222; }
+.delay { color: red; font-weight: bold; }
+.arriving { color: yellow; font-weight: bold; }
+.on-time { color: lightgreen; font-weight: bold; }
+.route-color { font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>Next Trains</h1>
+<div style="display:flex; justify-content: space-between; align-items: center;">
+    <select id="stationSelect">
+        <option value="Town Hall">Town Hall</option>
+        <option value="Flagstaff">Flagstaff</option>
+        <option value="Melbourne Central">Melbourne Central</option>
+        <option value="State Library">State Library</option>
+        <option value="Flinders Street">Flinders Street</option>
+    </select>
+    <div id="refreshTime">🔄 --:--:--</div>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>Platform</th>
+            <th>Destination</th>
+            <th>Scheduled</th>
+            <th>Minutes</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody id="trainTable"></tbody>
+</table>
+
+<script>
+async function fetchTrains(station) {
+    try {
+        const res = await fetch(`/api/trains?station=${encodeURIComponent(station)}`);
+        const data = await res.json();
+        // Sort by platform (int) then minutes_until (int)
+        const trains = data.trains.sort((a, b) => {
+            return parseInt(a.platform) - parseInt(b.platform) ||
+                   a.minutes_until - b.minutes_until;
+        });
+        return trains;
+    } catch (e) {
+        console.error("Error fetching trains:", e);
+        return [];
+    }
+}
+
+function renderTrains(trains) {
+    const tbody = document.getElementById("trainTable");
+    tbody.innerHTML = "";
+
+    trains.forEach(train => {
+        const row = document.createElement("tr");
+
+        // Terminal-like status
+        let minsDisplay = "";
+        let delayStr = "";
+        if (train.status === "CANCELED") {      minsDisplay = "CANCELED";
+        } else if (train.minutes_until < 0) {   minsDisplay = "DEPARTED";
+        } else if (train.minutes_until === 0) { minsDisplay = "DEPARTING";
+        } else if (train.minutes_until === 1) { minsDisplay = "ARRIVING";
+        } else {
+            minsDisplay = `${train.minutes_until} min`;
+            if (train.delay_minutes > 0) delayStr = `+${train.delay_minutes}m`;
+            else if (train.delay_minutes < 0) delayStr = `${train.delay_minutes}m`;
+        }
+
+        // Create table row like terminal formatting
+        row.innerHTML = `
+            <td>${train.platform}</td>
+            <td>
+                <span style="color:#${train.route_color}; font-weight:bold">█</span>
+                ${train.destination.padEnd(35, " ")}
+            </td>
+            <td style="text-align:right">${train.scheduled_time.padStart(15, " ")}</td>
+            <td style="text-align:right">${minsDisplay.padStart(9, " ")}</td>
+            <td style="text-align:left; color:${delayStr.includes("+") ? "red" : delayStr.includes("-") ? "yellow" : "lightgreen"}">${delayStr}</td>
+        `;
+
+        tbody.appendChild(row);
+    });
+}
+
+const stationSelect = document.getElementById("stationSelect");
+
+async function update() {
+    const trains = await fetchTrains(stationSelect.value);
+    renderTrains(trains);
+
+    // Update refresh time
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, "0");
+    const mm = String(now.getMinutes()).padStart(2, "0");
+    const ss = String(now.getSeconds()).padStart(2, "0");
+    document.getElementById("refreshTime").textContent = `🔄 ${hh}:${mm}:${ss}`;
+}
+
+// Dropdown change
+stationSelect.addEventListener("change", update);
+
+// Auto-refresh every 30 seconds
+setInterval(update, 30000);
+
+// Initial load
+update();
+</script>
+
+<style>
+body { background: #111; color: #eee; font-family: sans-serif; }
+table { width: 100%; border-collapse: collapse; margin-top: 20px; font-family: monospace; }
+th, td { padding: 2px 6px; }
+th:nth-child(3), td:nth-child(3) { text-align: right; }
+th:nth-child(4), td:nth-child(4) { text-align: right; }
+th:nth-child(5), td:nth-child(5) { text-align: left; }
+th { background-color: #222; }
+</style>
+</body>
+</html>

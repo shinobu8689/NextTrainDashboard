@@ -24,17 +24,18 @@ The dashboard automatically refreshes every 30 seconds.
 
 ## Planned Improvements
 
-- Refactor the code to support a future web-based GUI using JavaScript instead of a terminal interface
-- Add support for multi-station queries in the terminal
+- Fixing display bugs of converted web-based GUI
+- Add support for multi-station queries
 - Evaluate automatic dataset updates from Transport Victoria
 - Simplify the setup process
 - Implement option.txt for default stations and other settings
-- Same trains switch Trips at Town Hall Station, showing as 2 trips where they shared the same block.
+- Same trains switch trips at Town Hall Station, showing as 2 trips where they shared the same block.
 
 ---
 
 ## Change Log
-INSERT DATE HERE - inital release to github
+15/02/2026 - Coverting to partial working Web-based UI with bugs
+12/02/2026 - initial release to github
 
 ---
 
@@ -151,7 +152,7 @@ Project Folder
 
 ## 変更履歴
 
-INSERT DATE HERE - GitHubへの初回リリース
+2026/02/12 - GitHubへの初回リリース
 
 ---
 
