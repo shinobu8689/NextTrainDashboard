@@ -1,3 +1,4 @@
+from collections import defaultdict
 import sqlite3
 import csv
 from datetime import datetime, timedelta
@@ -15,15 +16,14 @@ GTFS_PATH = "gtfs_metro_trains/"
 
 '''
 TODO:
-Code refactor for future web-based GUI with JavaScript instead of terminal.
 To add support for multi-station enquiry in terminal.
 Determine the viability auto updating dataset from Transport Victoria.
 Simplify setup process.
 Implement option.txt for default stations and other settings.
-Overnight services showing as 25:00+ should have a united display format. (sometimes 25:00 / 01:00)
 
-Need fix for Bus Replacement breaks the station search (Name displays as ___ Station Replacement Bus Stop).
-Town Hall Station direction showing duplicate entries due to trip changing, should be fixed by identifying the direction_id.
+Known Bugs:
+1. Overnight services showing as 25:00+ should have a united display format. (sometimes 25:00 / 01:00) sorting is fix but display is not.
+24:13 → 00:13
 '''
 
 
@@ -119,15 +119,28 @@ def time_str_to_min(time_str):
         raise ValueError(f"Invalid time string: {time_str}")
     return h * 60 + m
 
-def minutes_until(departure_time_str, now):
-    '''
-    compute the time differences between scheduled time and actual time
-    '''
-    dep_min = time_str_to_min(departure_time_str)
-    now_min = time_str_to_min(now)
+def minutes_until(departure_time_str, now_str):
+    """
+    Handles both GTFS (24:xx, 25:xx) and realtime (00:xx next-day)
+    """
 
-    diff = dep_min - now_min
-    return diff
+    dep_parts = list(map(int, departure_time_str.split(":")))
+    now_parts = list(map(int, now_str.split(":")))
+
+    dep_h, dep_m = dep_parts[0], dep_parts[1]
+    now_h, now_m = now_parts[0], now_parts[1]
+
+    dep_total = dep_h * 60 + dep_m
+    now_total = now_h * 60 + now_m
+
+    # 🔥 CRITICAL FIX:
+    # If departure hour < 3 AND current hour >= 21
+    # assume it's next day
+    if dep_h < 3 and now_h >= 21:
+        dep_total += 24 * 60
+
+    return dep_total - now_total
+
 
 def format_time_display(time_str):
     '''
@@ -175,19 +188,49 @@ def render_next_stops(next_stops): # not used in web version, but kept for termi
 
     print()
 
-def town_hall_block_merge(trains):
+def organise(station_name, trains, max_per_platform=3):
     """
-    Merge GTFS split trips that are actually the same physical train
-    continuing under the same block_id.
-
-    P1 -> Sunbury, uses direction 1
-    P2 -> Dandy, uses direction 0
-
+    Town Hall:
+    - P1 → direction_id = 1
+    - P2 → direction_id = 0
+    - Replacement bus platform becomes -1
+    - Limit results to max_per_platform per platform
     """
 
-    
+    organised = []
 
-    return trains
+    # Normalize platform
+    for t in trains:
+        if not t["platform"] or not str(t["platform"]).isdigit():
+            t["platform"] = -1
+        else:
+            t["platform"] = int(t["platform"])
+
+        if station_name == "Town Hall Station":
+            if t["platform"] == 1 and t["direction_id"] == "1":
+                #t["destination"] = t["destination"].replace("via Metro Tunnel", "").strip()
+                organised.append(t)
+
+            elif t["platform"] == 2 and t["direction_id"] == "0":
+                organised.append(t)
+
+        else:
+            organised.append(t)
+
+    # ---- LIMIT PER PLATFORM ----
+    limited = []
+    grouped = defaultdict(list)
+
+    for t in organised:
+        grouped[t["platform"]].append(t)
+
+    for platform in grouped:
+        # IMPORTANT: assumes trains already sorted by minutes_until
+        limited.extend(grouped[platform][:max_per_platform])
+
+    return limited
+
+
 
 
 def get_station_data(station_name, conn):
@@ -246,13 +289,13 @@ def get_station_data(station_name, conn):
         direction_id,
         stop_name
     FROM ranked
-    WHERE rn <= 8
+    WHERE rn <= 12
     ORDER BY CAST(platform_code AS INTEGER) ASC, departure_time;
         """
 
     cursor = conn.execute(query)
     rows = cursor.fetchall()
-    station_name = rows[0][-1] if rows else "No results found"
+    station_name = rows[-1][-1] if rows else "No results found"
 
     trip_lst = [each[4] for each in rows]                       # Get the list of trips to enquiry RT status
     response = current_trips.enquiry(station_name, trip_lst)
@@ -296,13 +339,15 @@ def get_station_data(station_name, conn):
             "delay_minutes": delay_int,
             "status": trip_relationship or "SCHEDULED",
             "trip_id": trip_id,
-            "block_id": block_id
+            "block_id": block_id,
+            "direction_id": direction_id
         }
 
         trains.append(train_data)
 
-    trains = town_hall_block_merge(trains)
-    trains.sort(key=lambda t: (int(t['platform']), t['minutes_until'])) #containing Replacement Bus Stops with non-integer platform codes, breaks
+    trains = sorted(trains, key=lambda t: t["minutes_until"])
+    trains = organise(station_name, trains)
+    trains.sort(key=lambda t: (int(t['platform']), t['minutes_until']))
 
     return {
         "station": stop_name,

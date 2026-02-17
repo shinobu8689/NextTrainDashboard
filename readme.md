@@ -34,6 +34,7 @@ The dashboard automatically refreshes every 30 seconds.
 ---
 
 ## Change Log
+16/02/2026 - Replacement Bus will not crash the program, and fixed direction from city headsign
 15/02/2026 - Coverting to partial working Web-based UI with bugs
 12/02/2026 - initial release to github
 

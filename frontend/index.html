@@ -68,6 +68,7 @@ function renderTrains(trains) {
         // Terminal-like status
         let minsDisplay = "";
         let delayStr = "";
+        let platformDisplay = "";
         if (train.status === "CANCELED") {      minsDisplay = "CANCELED";
         } else if (train.minutes_until < 0) {   minsDisplay = "DEPARTED";
         } else if (train.minutes_until === 0) { minsDisplay = "DEPARTING";
@@ -78,17 +79,24 @@ function renderTrains(trains) {
             else if (train.delay_minutes < 0) delayStr = `${train.delay_minutes}m`;
         }
 
+        if (train.platform === -1) {    
+            platformDisplay = "Replacement Bus";
+        } else {                        
+            platformDisplay = train.platform;
+        }
+
         // Create table row like terminal formatting
         row.innerHTML = `
-            <td>${train.platform}</td>
-            <td>
-                <span style="color:#${train.route_color}; font-weight:bold">█</span>
-                ${train.destination.padEnd(35, " ")}
-            </td>
-            <td style="text-align:right">${train.scheduled_time.padStart(15, " ")}</td>
-            <td style="text-align:right">${minsDisplay.padStart(9, " ")}</td>
-            <td style="text-align:left; color:${delayStr.includes("+") ? "red" : delayStr.includes("-") ? "yellow" : "lightgreen"}">${delayStr}</td>
-        `;
+    <td>${platformDisplay}</td>
+    <td>
+        <span style="color:#${train.route_color}; font-weight:bold">█</span>
+        ${train.destination.replace(/(via Metro Tunnel|via City Loop)/g, '<span class="via-text">$1</span>')}
+    </td>
+    <td style="text-align:right">${train.scheduled_time.padStart(15, " ")}</td>
+    <td style="text-align:right">${minsDisplay.padStart(9, " ")}</td>
+    <td style="text-align:left; color:${delayStr.includes("+") ? "red" : delayStr.includes("-") ? "yellow" : "lightgreen"}">${delayStr}</td>
+`;
+
 
         tbody.appendChild(row);
     });
@@ -126,6 +134,10 @@ th:nth-child(3), td:nth-child(3) { text-align: right; }
 th:nth-child(4), td:nth-child(4) { text-align: right; }
 th:nth-child(5), td:nth-child(5) { text-align: left; }
 th { background-color: #222; }
+.via-text {
+    font-size: 0.8em;   /* smaller font */
+    color: #aaa;        /* optional lighter color */
+}
 </style>
 </body>
 </html>

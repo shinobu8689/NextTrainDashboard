@@ -236,7 +236,7 @@ def main(input_string, conn):
 
     cursor = conn.execute(query)
     rows = cursor.fetchall()
-    station_name = rows[0][-1] if rows else "No results found"
+    station_name = rows[-1][-1] if rows else "No results found"
 
 
     print(f"\n🚇 {station_name:<57}🔄 {now}\n{'=' * 72}")
