@@ -143,11 +143,21 @@ def minutes_until(departure_time_str, now_str):
 
 
 def format_time_display(time_str):
-    '''
-    Format HH:MM:SS, possibly >24, into HH:MM
-    '''
-    h, m, s = map(int, time_str.split(":"))
+    """
+    Format HH:MM:SS or HH:MM (possibly >24h) into HH:MM
+    """
+    parts = list(map(int, time_str.split(":")))
+    
+    if len(parts) == 3:
+        h, m, s = parts
+    elif len(parts) == 2:
+        h, m = parts
+        s = 0
+    else:
+        raise ValueError(f"Invalid time format: {time_str}")
+
     return f"{h:02d}:{m:02d}"
+
 
 def render_next_stops(next_stops): # not used in web version, but kept for terminal display, might implement later
     '''
@@ -322,6 +332,7 @@ def get_station_data(station_name, conn):
             stop_data = response[trip_id][0]  # Only one stop matching station_name
             trip_relationship = response[trip_id][0]["relationship"]
             new_dep_time = stop_data["realtime"]
+            new_dep_time = format_time_display(new_dep_time)
             delay_int = stop_data["delay"]
 
             # Calculate mins until new departure

@@ -16,25 +16,26 @@ The application displays:
 - Time until the next train
 - Trip status
 - Delay information
-- Stops for incoming trains
 
 The dashboard automatically refreshes every 30 seconds.
 
 ---
 
 ## Planned Improvements
-
-- Fixing display bugs of converted web-based GUI
-- Add support for multi-station queries
-- Evaluate automatic dataset updates from Transport Victoria
 - Simplify the setup process
-- Implement option.txt for default stations and other settings
-- Same trains switch trips at Town Hall Station, showing as 2 trips where they shared the same block.
+
+## Furture Improvements
+- Weekly update gtfs.zip updates from Transport Victoria
+- Add support for multi-station (i.e Melbourne Central <-> State Library / Flinders Street <-> Town Hall )
+- City Loop trains to show the direction in the City Loop (Clockwise/Anti-Clockwise)
+- Show all stops for first train for each platform
 
 ---
 
 ## Change Log
+19/02/2026 - Time display format unified as HH:MM between 00:00 - 23:59 instead of operational hour 24h+
 16/02/2026 - Replacement Bus will not crash the program, and fixed direction from city headsign
+             Same trains/block with different trips at Town Hall will shown as one entry
 15/02/2026 - Coverting to partial working Web-based UI with bugs
 12/02/2026 - initial release to github
 
@@ -54,8 +55,8 @@ https://opendata.transport.vic.gov.au/dataset/gtfs-schedule
 
 You will need:
 
-- GTFS Schedule dataset (from Transport Victoria Open Data)
-- A Transport Victoria Open Data API key
+- GTFS Schedule dataset (from Transport Victoria OpenData)
+- A Transport Victoria OpenData API key
 
 ---
 
