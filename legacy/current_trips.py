@@ -172,3 +172,23 @@ def enquiry(station_name: str, trip_id_lst):
     trips_data = return_trip_realtime(trip_ids_input, station_name_input, feed)
 
     return trips_data
+
+
+# Below code for debugging - Single Trip Enquiry
+if __name__ == "__main__":
+    station_name = input("Enter station name (partial ok): ").strip()
+    trip_id_lst = input("Enter trip IDs (comma-separated): ").strip().split(",")
+
+    trips_data = enquiry(station_name, trip_id_lst)
+
+    # Build printable output
+    for trip_id, stops in trips_data.items():
+        if not stops:
+            print(f"Trip {trip_id} not found or no matching stops.")
+            continue
+
+        print(f"Trip ID: {trip_id}")
+        for s in stops:
+            print(f"{s['relationship']:^11} | {s['scheduled']} <> {s['realtime']} | {s['delay']:^9}")
+        print("-" * 50)
+

@@ -11,14 +11,13 @@ import current_trips
 DB_FILE = "gtfs.db"
 GTFS_PATH = "gtfs_metro_trains/"
 
-'''
-TODO:
-Code refactor for future web-based GUI with JavaScript instead of terminal.
-To add support for multi-station enquiry in terminal.
-Determine the viability auto updating dataset from Transport Victoria.
-Simplify setup process.
-Implement option.txt for default stations and other settings.
-'''
+
+"""
+Deprecated terminal version.
+Legacy CLI version of NextTrain.
+Kept for reference.
+Web version is now the primary interface.
+"""
 
 
 FILES = {

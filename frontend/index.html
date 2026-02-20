@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>NextTrain Dashboard</title>
+<title>NextTrain</title>
 <style>
 body { font-family: sans-serif; background: #111; color: #eee; }
 table { width: 100%; border-collapse: collapse; margin-top: 20px; }
@@ -16,16 +16,17 @@ th { background-color: #222; }
 </head>
 <body>
 
-<h1>Next Trains</h1>
-<div style="display:flex; justify-content: space-between; align-items: center;">
-    <select id="stationSelect">
-        <option value="Town Hall">Town Hall</option>
-        <option value="Flagstaff">Flagstaff</option>
-        <option value="Melbourne Central">Melbourne Central</option>
-        <option value="State Library">State Library</option>
-        <option value="Flinders Street">Flinders Street</option>
-    </select>
-    <div id="refreshTime">🔄 --:--:--</div>
+<div style="display:flex; align-items:center;">
+    <div style="flex:1;">
+        <select id="stationSelect">
+            <option value="State Library">State Library</option>
+            <option value="Melbourne Central">Melbourne Central</option>
+            <option value="Town Hall">Town Hall</option>
+            <option value="Flinders Street">Flinders Street</option>
+        </select>
+    </div>
+    <div style="flex:1; text-align:center;" id="dbWarning">Next Trains</div>
+    <div style="flex:1; text-align:right;" id="refreshTime">🔄 --:--:--</div>
 </div>
 
 <table>
@@ -46,12 +47,7 @@ async function fetchTrains(station) {
     try {
         const res = await fetch(`/api/trains?station=${encodeURIComponent(station)}`);
         const data = await res.json();
-        // Sort by platform (int) then minutes_until (int)
-        const trains = data.trains.sort((a, b) => {
-            return parseInt(a.platform) - parseInt(b.platform) ||
-                   a.minutes_until - b.minutes_until;
-        });
-        return trains;
+        return data.trains;
     } catch (e) {
         console.error("Error fetching trains:", e);
         return [];
@@ -65,7 +61,6 @@ function renderTrains(trains) {
     trains.forEach(train => {
         const row = document.createElement("tr");
 
-        // Terminal-like status
         let minsDisplay = "";
         let delayStr = "";
         let platformDisplay = "";
@@ -79,23 +74,21 @@ function renderTrains(trains) {
             else if (train.delay_minutes < 0) delayStr = `${train.delay_minutes}m`;
         }
 
-        if (train.platform === -1) {    
-            platformDisplay = "Replacement Bus";
-        } else {                        
-            platformDisplay = train.platform;
+        if (train.platform === -1) {    platformDisplay = "Replacement Bus";
+        } else {                        platformDisplay = train.platform;
         }
 
-        // Create table row like terminal formatting
+        // Create table row
         row.innerHTML = `
-    <td>${platformDisplay}</td>
-    <td>
-        <span style="color:#${train.route_color}; font-weight:bold">█</span>
-        ${train.destination.replace(/(via Metro Tunnel|via City Loop)/g, '<span class="via-text">$1</span>')}
-    </td>
-    <td style="text-align:right">${train.scheduled_time.padStart(15, " ")}</td>
-    <td style="text-align:right">${minsDisplay.padStart(9, " ")}</td>
-    <td style="text-align:left; color:${delayStr.includes("+") ? "red" : delayStr.includes("-") ? "yellow" : "lightgreen"}">${delayStr}</td>
-`;
+            <td>${platformDisplay}</td>
+            <td>
+                <span style="color:#${train.route_color}; font-weight:bold">█</span>
+                ${train.destination.replace(/(via Metro Tunnel|via City Loop)/g, '<span class="via-text">$1</span>')}
+            </td>
+            <td style="text-align:right">${train.scheduled_time.padStart(15, " ")}</td>
+            <td style="text-align:right">${minsDisplay.padStart(9, " ")}</td>
+            <td style="text-align:left; color:${delayStr.includes("+") ? "red" : delayStr.includes("-") ? "yellow" : "lightgreen"}">${delayStr}</td>
+        `;
 
 
         tbody.appendChild(row);
@@ -107,6 +100,11 @@ const stationSelect = document.getElementById("stationSelect");
 async function update() {
     const trains = await fetchTrains(stationSelect.value);
     renderTrains(trains);
+
+    // Ask backend if DB is stale
+    const response = await fetch("/api/db-status");
+    const data = await response.json();
+    if (data.is_stale) {document.getElementById("dbWarning").textContent = "⚠ Database might be out of date";}
 
     // Update refresh time
     const now = new Date();

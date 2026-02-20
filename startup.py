@@ -1,4 +1,5 @@
 import csv
+from datetime import datetime, timedelta
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import sqlite3
@@ -9,12 +10,12 @@ GTFS_PATH = "gtfs_metro_trains/"
 DB_FILE = "gtfs.db"
 
 app = FastAPI()
-
-# Serve frontend
 app.mount("/frontend", StaticFiles(directory="frontend", html=True), name="frontend")
 
-
 def load_table(conn, table, filename):
+    """
+    Load a GTFS file into the SQLite database.
+    """
     with open(os.path.join(GTFS_PATH, filename), encoding="utf-8") as f:
         reader = csv.reader(f)
         headers = next(reader)
@@ -24,8 +25,10 @@ def load_table(conn, table, filename):
             conn.execute(f"INSERT INTO {table} VALUES ({','.join('?' * len(row))})", row)
     conn.commit()
 
-
 def init_db():
+    """
+    Initialize the database if it doesn't exist.
+    """
     if not os.path.exists(DB_FILE):
         conn = sqlite3.connect(DB_FILE)
         load_table(conn, "stops", "stops.txt")
@@ -44,7 +47,19 @@ init_db()
 # ----------------------------
 @app.get("/api/trains")
 def trains(station: str):
+    """
+    Get train data for a specific station.
+    """
     conn = sqlite3.connect(DB_FILE)
     data = get_station_data(station, conn)
     conn.close()
     return data
+
+@app.get("/api/db-status")
+def db_status():
+    """
+    Check if the database is older than 7 days.
+    """
+    age = datetime.now() - datetime.fromtimestamp(os.path.getmtime(DB_FILE))
+    is_stale = age > timedelta(days=7)
+    return {"is_stale": is_stale}

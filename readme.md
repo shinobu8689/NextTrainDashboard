@@ -23,21 +23,30 @@ The dashboard automatically refreshes every 30 seconds.
 
 ## Planned Improvements
 - Simplify the setup process
+- option to show all stops for first train for each platform
+- move api warning to Web-based UI instead of terminal
+- refactor current_trips.py
 
 ## Furture Improvements
 - Weekly update gtfs.zip updates from Transport Victoria
 - Add support for multi-station (i.e Melbourne Central <-> State Library / Flinders Street <-> Town Hall )
-- City Loop trains to show the direction in the City Loop (Clockwise/Anti-Clockwise)
-- Show all stops for first train for each platform
+- City Loop trains to show Clockwise/Anti-Clockwise in the City Loop
+
 
 ---
 
 ## Change Log
-19/02/2026 - Time display format unified as HH:MM between 00:00 - 23:59 instead of operational hour 24h+
-16/02/2026 - Replacement Bus will not crash the program, and fixed direction from city headsign
-             Same trains/block with different trips at Town Hall will shown as one entry
-15/02/2026 - Coverting to partial working Web-based UI with bugs
-12/02/2026 - initial release to github
+- 20/02/2026
+   - Code cleaned and refactored, added data_validation
+- 19/02/2026
+   - Time display format unified as HH:MM between 00:00 - 23:59 instead of operational hour 24h+
+- 16/02/2026
+   - Replacement Bus will not crash the program, and fixed direction from city headsign
+   - Same trains/block with different trips at Town Hall will shown as one entry
+- 15/02/2026
+   - Coverting to partial working Web-based UI with bugs
+- 12/02/2026
+   - initial release to github
 
 ---
 
@@ -52,7 +61,7 @@ https://opendata.transport.vic.gov.au/dataset/gtfs-schedule
 ---
 
 ## Requirements
-
+<!--  -->
 You will need:
 
 - GTFS Schedule dataset (from Transport Victoria OpenData)

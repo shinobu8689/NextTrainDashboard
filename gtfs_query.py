@@ -7,25 +7,10 @@ import time
 from fastapi import FastAPI
 import current_trips
 
-
 app = FastAPI()
-
 
 DB_FILE = "gtfs.db"
 GTFS_PATH = "gtfs_metro_trains/"
-
-'''
-TODO:
-To add support for multi-station enquiry in terminal.
-Determine the viability auto updating dataset from Transport Victoria.
-Simplify setup process.
-Implement option.txt for default stations and other settings.
-
-Known Bugs:
-1. Overnight services showing as 25:00+ should have a united display format. (sometimes 25:00 / 01:00) sorting is fix but display is not.
-24:13 → 00:13
-'''
-
 
 FILES = {
     "stops": "stops.txt",
@@ -35,56 +20,12 @@ FILES = {
     "calendar": "calendar.txt",
 }
 
-# Trains from the city might switch to another destination where they loop until arriving at Flinders
 CITY_STATIONS = [
     "Flagstaff Station",
     "Melbourne Central Station",
     "Parliament Station",
     "Southern Cross Station"
 ]
-
-def colour_text(hex_code, text):
-    '''
-    FOR TERMINAL
-    Print text with HEX colour code, where it gets translated into rgb value for terminal.
-    '''
-    r, g, b = (int(hex_code.lstrip("#")[i:i+2], 16) for i in (0, 2, 4))
-    return f"\033[38;2;{r};{g};{b}m{text}\033[0m"
-
-def load_table(conn, table, filename):
-    '''
-    create a db file based on txt to use SQLite
-    '''
-    with open(GTFS_PATH + filename, encoding="utf-8") as f:
-        reader = csv.reader(f)
-        headers = next(reader)
-
-        conn.execute(f"DROP TABLE IF EXISTS {table}")
-        conn.execute(f"CREATE TABLE {table} ({','.join(h + ' TEXT' for h in headers)})")
-        for row in reader: conn.execute(f"INSERT INTO {table} VALUES ({','.join('?' * len(row))})", row)
-    conn.commit()
-
-def get_next_stops(conn, trip_id, current_seq, now):
-    '''
-    using the trip id, look for the remaining stops based on schedule data
-    '''
-    now_min = time_str_to_min(now)
-
-    q = f"""
-    SELECT s.stop_name, st.arrival_time
-    FROM stop_times st
-    JOIN stops s ON st.stop_id = s.stop_id
-    WHERE st.trip_id = '{trip_id}'
-      AND st.stop_sequence + 0 > {current_seq}
-    """
-    cursor = conn.execute(q)
-    # filter manually using minutes
-    result = []
-    for stop_name, arr_time in cursor.fetchall():
-        arr_min = time_str_to_min(arr_time)
-        if arr_min >= now_min:
-            result.append((stop_name, arr_time))
-    return result
 
 def find_next_trip_in_block(conn, block_id, current_trip_id):
     '''
@@ -123,7 +64,6 @@ def minutes_until(departure_time_str, now_str):
     """
     Handles both GTFS (24:xx, 25:xx) and realtime (00:xx next-day)
     """
-
     dep_parts = list(map(int, departure_time_str.split(":")))
     now_parts = list(map(int, now_str.split(":")))
 
@@ -133,14 +73,9 @@ def minutes_until(departure_time_str, now_str):
     dep_total = dep_h * 60 + dep_m
     now_total = now_h * 60 + now_m
 
-    # 🔥 CRITICAL FIX:
-    # If departure hour < 3 AND current hour >= 21
-    # assume it's next day
-    if dep_h < 3 and now_h >= 21:
-        dep_total += 24 * 60
-
+    # assume it's next day if departure hour < 3 AND current hour >= 21
+    if dep_h < 3 and now_h >= 21: dep_total += 24 * 60
     return dep_total - now_total
-
 
 def format_time_display(time_str):
     """
@@ -148,7 +83,7 @@ def format_time_display(time_str):
     """
     parts = list(map(int, time_str.split(":")))
     
-    if len(parts) == 3:
+    if len(parts) == 3: 
         h, m, s = parts
     elif len(parts) == 2:
         h, m = parts
@@ -158,10 +93,42 @@ def format_time_display(time_str):
 
     return f"{h:02d}:{m:02d}"
 
+"""
+ to be converted feature from terminal ver, might implement later
+ get_next_stops()
+ render_next_stops()
+"""
+ 
+def get_next_stops(conn, trip_id, current_seq):
+    '''
+    using the trip id, look for the remaining stops based on schedule data
+    '''
+    now_min = time_str_to_min(now)
 
-def render_next_stops(next_stops): # not used in web version, but kept for terminal display, might implement later
+    q = f"""
+    SELECT s.stop_name, st.arrival_time
+    FROM stop_times st
+    JOIN stops s ON st.stop_id = s.stop_id
+    WHERE st.trip_id = '{trip_id}'
+      AND st.stop_sequence + 0 > {current_seq}
+    """
+    cursor = conn.execute(q)
+    # filter manually using minutes
+    result = []
+    for stop_name, arr_time in cursor.fetchall():
+        arr_min = time_str_to_min(arr_time)
+        if arr_min >= now_min:
+            result.append((stop_name, arr_time))
+    return result
+
+def render_next_stops(next_stops): 
     '''
     show the route and all stopping stations following the timetable.
+
+    next_stops = get_next_stops(conn, trip_id, stop_seq)
+    if next_stops:  render_next_stops(next_stops)
+    else:           print("└ Terminates")
+
     '''
     max_rows = 7
     total_stops = len(next_stops)
@@ -200,48 +167,34 @@ def render_next_stops(next_stops): # not used in web version, but kept for termi
 
 def organise(station_name, trains, max_per_platform=3):
     """
-    Town Hall:
+    General Rules:
+    - Replacement bus platform = -1
+    - Limit results to max_per_platform per platform (dafault 3)
+
+    Town Hall Special Rules as it shows duplicate entries when it changes trips:
     - P1 → direction_id = 1
     - P2 → direction_id = 0
-    - Replacement bus platform becomes -1
-    - Limit results to max_per_platform per platform
     """
 
     organised = []
 
     # Normalize platform
     for t in trains:
-        if not t["platform"] or not str(t["platform"]).isdigit():
-            t["platform"] = -1
-        else:
-            t["platform"] = int(t["platform"])
+        if not t["platform"] or not str(t["platform"]).isdigit():   t["platform"] = -1          # Replacement bus
+        else:                                                       t["platform"] = int(t["platform"])
 
         if station_name == "Town Hall Station":
-            if t["platform"] == 1 and t["direction_id"] == "1":
-                #t["destination"] = t["destination"].replace("via Metro Tunnel", "").strip()
-                organised.append(t)
+            if t["platform"] == 1 and t["direction_id"] == "1":     organised.append(t)
+            elif t["platform"] == 2 and t["direction_id"] == "0":   organised.append(t)
+        else:   organised.append(t)
 
-            elif t["platform"] == 2 and t["direction_id"] == "0":
-                organised.append(t)
-
-        else:
-            organised.append(t)
-
-    # ---- LIMIT PER PLATFORM ----
+    # Limit entries per platform
     limited = []
     grouped = defaultdict(list)
-
-    for t in organised:
-        grouped[t["platform"]].append(t)
-
-    for platform in grouped:
-        # IMPORTANT: assumes trains already sorted by minutes_until
-        limited.extend(grouped[platform][:max_per_platform])
+    for t in organised:         grouped[t["platform"]].append(t)
+    for platform in grouped:    limited.extend(grouped[platform][:max_per_platform])
 
     return limited
-
-
-
 
 def get_station_data(station_name, conn):
 
@@ -249,7 +202,6 @@ def get_station_data(station_name, conn):
     five_mins_ago = (datetime.now() - timedelta(minutes=3)).strftime("%H:%M:%S")
     weekday = datetime.now().strftime("%A").lower()
     today = datetime.now().strftime("%Y%m%d")
-
 
     query = f"""
     WITH ranked AS (
@@ -309,7 +261,6 @@ def get_station_data(station_name, conn):
 
     trip_lst = [each[4] for each in rows]                       # Get the list of trips to enquiry RT status
     response = current_trips.enquiry(station_name, trip_lst)
-    if not response: print("No real-time data available.")
 
     trains = []
 
@@ -317,9 +268,9 @@ def get_station_data(station_name, conn):
         route_color, platform, headsign, dep_time, trip_id, block_id, direction_id, stop_name = each
 
         # Showing dest for trip passing city's station if inbound trains heading to Flinders Street first
-        next_trip = find_next_trip_in_block(conn, block_id, trip_id)
-        if next_trip and direction_id == "1" and any(word in station_name for word in CITY_STATIONS):
-            headsign = f"{next_trip[0]}"
+        if direction_id == "1" and any(word in station_name for word in CITY_STATIONS):
+            next_trip = find_next_trip_in_block(conn, block_id, trip_id)
+            if next_trip:   headsign = f"{next_trip[0]}"
 
         # Default scheduled time calculations
         mins = minutes_until(dep_time, now)
