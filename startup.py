@@ -3,8 +3,11 @@ from datetime import datetime, timedelta
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import sqlite3
+import current_trips
 from gtfs_query import get_station_data
 import os
+
+# Frontend
 
 GTFS_PATH = "gtfs_metro_trains/"
 DB_FILE = "gtfs.db"
@@ -63,3 +66,11 @@ def db_status():
     age = datetime.now() - datetime.fromtimestamp(os.path.getmtime(DB_FILE))
     is_stale = age > timedelta(days=7)
     return {"is_stale": is_stale}
+
+@app.get("/api/key-check")
+def api_key_check():
+    """
+    get backend info for API key status
+    """
+    key, status = current_trips.load_api_key()
+    return {"status": status}

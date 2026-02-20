@@ -25,7 +25,7 @@ th { background-color: #222; }
             <option value="Flinders Street">Flinders Street</option>
         </select>
     </div>
-    <div style="flex:1; text-align:center;" id="dbWarning">Next Trains</div>
+    <div id="dbWarning" style="flex:1; text-align:center; white-space:nowrap;">Next Trains</div>
     <div style="flex:1; text-align:right;" id="refreshTime">🔄 --:--:--</div>
 </div>
 
@@ -101,10 +101,15 @@ async function update() {
     const trains = await fetchTrains(stationSelect.value);
     renderTrains(trains);
 
-    // Ask backend if DB is stale
+    // check if DB is stale
     const response = await fetch("/api/db-status");
     const data = await response.json();
     if (data.is_stale) {document.getElementById("dbWarning").textContent = "⚠ Database might be out of date";}
+
+    // key check
+    const keyCheck = await fetch("/api/key-check");
+    const keyData = await keyCheck.json();
+    if (!keyData.status) {document.getElementById("dbWarning").textContent = "⚠ No Realtime info (Check API Key)";}
 
     // Update refresh time
     const now = new Date();
@@ -112,6 +117,8 @@ async function update() {
     const mm = String(now.getMinutes()).padStart(2, "0");
     const ss = String(now.getSeconds()).padStart(2, "0");
     document.getElementById("refreshTime").textContent = `🔄 ${hh}:${mm}:${ss}`;
+
+    
 }
 
 // Dropdown change

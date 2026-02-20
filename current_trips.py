@@ -6,6 +6,8 @@ from google.transit import gtfs_realtime_pb2
 import os
 import sys
 
+# API Layer
+
 GTFS_DB = "gtfs.db"
 URL = "https://api.opendata.transport.vic.gov.au/opendata/public-transport/gtfs/realtime/v1/metro/trip-updates"
 
@@ -16,29 +18,19 @@ def load_api_key():
     If "api_key.txt" doesn't exist, create it and exit
     Otherwise, return key
     '''
+    key_placeholder = "PUT_YOUR_API_KEY_HERE"
+    if not os.path.exists(KEY_FILE): 
+        with open(KEY_FILE, "w") as f:  f.write(key_placeholder)
+    else:
+        with open(KEY_FILE, "r") as f:  key = f.read().strip()
+    
+    status = False if not key or key == key_placeholder else True
+    return key, status
 
-    if not os.path.exists(KEY_FILE):
-        with open(KEY_FILE, "w") as f:
-            f.write("PUT_YOUR_API_KEY_HERE\n")
-        print(f"[!] {KEY_FILE} was created.")
-        print(f"[!] Paste your API key into the file and rerun.")
-        print(f"[!] API Key could be acquire from Transport Victoria's homepage.")
-        sys.exit(1)
-
-    with open(KEY_FILE, "r") as f:
-        key = f.read().strip()
-
-    if not key or key == "PUT_YOUR_API_KEY_HERE":
-        print("[!] API key missing or placeholder.")
-        print("[!] Edit api_key.txt and rerun.")
-        sys.exit(1)
-
-    return key
-
-API_KEY = load_api_key()
+API_KEY, status = load_api_key()
 
 HEADERS = { "KeyId": API_KEY }
-MELBOURNE = ZoneInfo("Australia/Melbourne") # GTFS uses GMT+0, default to use Melbourne Timezone
+MELBOURNE = ZoneInfo("Australia/Melbourne") # GTFS uses GMT+0, default to Melbourne Timezone
 
 SCHEDULE_ENUM = {   # Enum used in GTFS
     0: "SCHEDULED",
@@ -94,7 +86,7 @@ def calculate_delay(rt_time, sched_time):
     return delay_min
 
 # =====================
-# MAIN FUNCTION
+# MAIN FUNCTIONS
 # =====================
 def return_trip_realtime(trip_ids, station_name, feed):
     """
@@ -123,17 +115,14 @@ def return_trip_realtime(trip_ids, station_name, feed):
 
                 # Realtime time
                 rt_time = None
-                if stu.HasField("arrival") and stu.arrival.time:
-                    rt_time = datetime.fromtimestamp(stu.arrival.time, tz=timezone.utc).astimezone(MELBOURNE)
-                elif stu.HasField("departure") and stu.departure.time:
-                    rt_time = datetime.fromtimestamp(stu.departure.time, tz=timezone.utc).astimezone(MELBOURNE)
+                if stu.HasField("arrival") and stu.arrival.time:        rt_time = datetime.fromtimestamp(stu.arrival.time, tz=timezone.utc).astimezone(MELBOURNE)
+                elif stu.HasField("departure") and stu.departure.time:  rt_time = datetime.fromtimestamp(stu.departure.time, tz=timezone.utc).astimezone(MELBOURNE)
 
                 sched_time = schedule_map.get(stu.stop_id)
                 sched_str = sched_time.strftime("%H:%M") if sched_time else "N/A"
                 rt_str = rt_time.strftime("%H:%M") if rt_time else "N/A"
 
-                relationship = SCHEDULE_ENUM.get(stu.schedule_relationship, "UNKNOWN") \
-                    if stu.HasField("schedule_relationship") else "UNKNOWN"
+                relationship = SCHEDULE_ENUM.get(stu.schedule_relationship, "UNKNOWN") if stu.HasField("schedule_relationship") else "UNKNOWN"
                 delay_int = calculate_delay(rt_time, sched_time)
 
                 trip_stops.append({
@@ -145,10 +134,7 @@ def return_trip_realtime(trip_ids, station_name, feed):
 
             break  # stop after first matching trip update
 
-        if trip_found:
-            result[trip_id] = trip_stops
-        else:
-            result[trip_id] = []
+        result[trip_id] = trip_stops if trip_found else []
 
     return result
 
@@ -162,7 +148,6 @@ def enquiry(station_name: str, trip_id_lst):
 
     response = requests.get(URL, headers=HEADERS)
     if response.status_code != 200:
-        print("Error fetching realtime data:", response.status_code)
         return None
 
     feed = gtfs_realtime_pb2.FeedMessage()

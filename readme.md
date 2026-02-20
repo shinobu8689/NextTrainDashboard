@@ -24,8 +24,6 @@ The dashboard automatically refreshes every 30 seconds.
 ## Planned Improvements
 - Simplify the setup process
 - option to show all stops for first train for each platform
-- move api warning to Web-based UI instead of terminal
-- refactor current_trips.py
 
 ## Furture Improvements
 - Weekly update gtfs.zip updates from Transport Victoria

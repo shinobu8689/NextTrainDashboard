@@ -7,6 +7,8 @@ import time
 from fastapi import FastAPI
 import current_trips
 
+# Main Logic
+
 app = FastAPI()
 
 DB_FILE = "gtfs.db"
@@ -79,11 +81,11 @@ def minutes_until(departure_time_str, now_str):
 
 def format_time_display(time_str):
     """
-    Format HH:MM:SS or HH:MM (possibly >24h) into HH:MM
+    Format HH:MM:SS or HH:MM (possibly >24h) into standard 00:00–23:59 time.
     """
     parts = list(map(int, time_str.split(":")))
     
-    if len(parts) == 3: 
+    if len(parts) == 3:
         h, m, s = parts
     elif len(parts) == 2:
         h, m = parts
@@ -91,7 +93,14 @@ def format_time_display(time_str):
     else:
         raise ValueError(f"Invalid time format: {time_str}")
 
-    return f"{h:02d}:{m:02d}"
+    total_minutes = h * 60 + m
+    total_minutes %= 24 * 60  # wrap around 24h
+
+    new_h = total_minutes // 60
+    new_m = total_minutes % 60
+
+    return f"{new_h:02d}:{new_m:02d}"
+
 
 """
  to be converted feature from terminal ver, might implement later
@@ -282,8 +291,7 @@ def get_station_data(station_name, conn):
         if response and trip_id in response and response[trip_id]:
             stop_data = response[trip_id][0]  # Only one stop matching station_name
             trip_relationship = response[trip_id][0]["relationship"]
-            new_dep_time = stop_data["realtime"]
-            new_dep_time = format_time_display(new_dep_time)
+            new_dep_time = format_time_display(stop_data["realtime"])
             delay_int = stop_data["delay"]
 
             # Calculate mins until new departure
