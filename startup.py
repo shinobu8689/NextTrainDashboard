@@ -6,6 +6,7 @@ import sqlite3
 import current_trips
 from gtfs_query import get_station_data
 import os
+import webbrowser
 
 # Frontend
 
@@ -41,10 +42,6 @@ def init_db():
         load_table(conn, "calendar", "calendar.txt")
         conn.close()
 
-
-init_db()
-
-
 # ----------------------------
 # API endpoint
 # ----------------------------
@@ -74,3 +71,7 @@ def api_key_check():
     """
     key, status = current_trips.load_api_key()
     return {"status": status}
+
+if __name__ == "__main__":
+    init_db()
+    webbrowser.open("http://127.0.0.1:8000/frontend/index.html", new=2)
